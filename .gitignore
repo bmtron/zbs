@@ -1,0 +1,4 @@
+.zig-cache/
+src/*.o
+src/main
+src/zbs.json
