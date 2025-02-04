@@ -2,3 +2,5 @@
 src/client/*.o
 src/client/main
 src/client/zbs.json
+src/server/*.o
+src/server/main

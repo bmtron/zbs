@@ -17,10 +17,12 @@ pub const Command = struct {
         const stdout = std.io.getStdOut().writer();
 
         var file_name: [:0]const u8 = undefined;
-        if (ctx.args.items.len <= 1) {
-            file_name = "zbs.json";
+        if (ctx.args.len > 1) {
+            if (ctx.args[1]) |arg| {
+                file_name = arg;
+            }
         } else {
-            file_name = ctx.args.items[1];
+            file_name = "zbs.json";
         }
         try stdout.print("beginning parse of {s}\n", .{file_name});
         const prs_cfg = try common.parseConfig(ctx.allocator, file_name);

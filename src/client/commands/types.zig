@@ -4,7 +4,7 @@ pub const CommandError = error{ StdPrintError, FileReadError, JsonParseError, Ou
 
 pub const CommandContext = struct {
     allocator: std.mem.Allocator,
-    args: std.ArrayList([:0]const u8),
+    args: [50]?[:0]const u8,
 };
 
 pub const CommandInterface = struct {
