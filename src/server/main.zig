@@ -1,14 +1,11 @@
 const std = @import("std");
+const tcp = @import("tcp.zig");
 
 pub fn main() !void {
     try testSocket();
 }
 const f = std.posix.sockaddr.un;
-pub fn stdNetSock() !void {
-    const strm = try std.net.connectUnixSocket("/tmp/test_sock");
-    const buf: []u8 = undefined;
-    try strm.read(buf);
-}
+
 pub fn testSocket() !void {
     const protocol_default = 0;
     const sock = try std.posix.socket(std.os.linux.AF.UNIX, std.os.linux.SOCK.STREAM, protocol_default);

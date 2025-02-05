@@ -11,7 +11,8 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
     _ = args.skip();
 
-    const alloc = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
 
     var arg_holder: [50]?[:0]const u8 = undefined;
     @memset(arg_holder[0..], null);
@@ -24,7 +25,7 @@ pub fn main() !void {
     if (arg_holder[0]) |arg| {
         if (std.mem.eql(u8, arg, "init")) {
             const init_cmd = init.Command.meta();
-            init_cmd.execute(.{ .allocator = std.heap.page_allocator, .args = arg_holder }) catch |err| {
+            init_cmd.execute(.{ .allocator = alloc, .args = arg_holder }) catch |err| {
                 if (err == cmdtypes.CommandError.ConfigExists) {
                     try stdout.print("Config file already exists.\n", .{});
                 }
