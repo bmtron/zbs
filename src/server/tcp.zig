@@ -23,7 +23,6 @@ pub fn ipToU32(ipstr: []const u8) !u32 {
         chk_chr = ipstr[count];
 
         while (chk_chr != '.' and ipstr.len > count) { // loop through each char in possible octet
-
             octet_val = octet_val * 10 + (ipstr[count] - '0');
             count = count + 1;
             if (count < ipstr.len) {
@@ -37,7 +36,31 @@ pub fn ipToU32(ipstr: []const u8) !u32 {
     return result;
 }
 
+pub fn u32ToIp(ipnum: u32, allocator: std.mem.Allocator) ![]u8 {
+    var result = try allocator.alloc(u8, 4);
+    var count: u5 = 0;
+    while (count < result.len) {
+        const u8max: u8 = 255;
+        const shifter: u5 = 8 * (3 - count);
+        const shifted: u8 = @as(u8, @truncate(ipnum >> shifter)) & u8max;
+        result[count] = shifted;
+
+        count = count + 1;
+    }
+
+    return result[0..4];
+}
+
 test "expect 192.168.50.1 to be 3232248321" {
     const ip = try ipToU32("192.168.50.1");
     try std.testing.expect(ip == 3232248321);
+}
+test "expect 3232248321 to be 192.168.50.1" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    const correct: [4]u8 = .{ 192, 168, 50, 1 };
+    const ip = try u32ToIp(3232248321, allocator);
+    std.debug.print("{any}\n", .{ip});
+    std.debug.print("The ip address is {d}{c}{d}{c}{d}{c}{d}\n", .{ ip[0], '.', ip[1], '.', ip[2], '.', ip[3] });
+    try std.testing.expect(std.mem.eql(u8, ip, correct[0..4]));
 }
