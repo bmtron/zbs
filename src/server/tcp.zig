@@ -2,13 +2,13 @@ const root = @import("../root.zig");
 const std = @import("std");
 const Address = std.net.Address;
 
-pub fn tcpServ() !void {
+pub fn tcpServ(ip: []const u8) !void {
     const sock = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, 0);
     defer std.posix.close(sock);
 
     //   const enable: c_int = 1;
     //    try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &enable, @sizeOf(c_int));
-    const ipstr = "127.0.0.1";
+    const ipstr = ip;
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();

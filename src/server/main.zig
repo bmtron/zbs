@@ -3,7 +3,7 @@ const tcp = @import("tcp.zig");
 
 pub fn main() !void {
     //    try testSocket();
-    try tcp.tcpServ();
+    try tcp.tcpServ("127.0.0.1");
 }
 const f = std.posix.sockaddr.un;
 
