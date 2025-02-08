@@ -2,7 +2,8 @@ const std = @import("std");
 const tcp = @import("tcp.zig");
 
 pub fn main() !void {
-    try testSocket();
+    //    try testSocket();
+    try tcp.tcpServ();
 }
 const f = std.posix.sockaddr.un;
 

@@ -1,10 +1,48 @@
 const root = @import("../root.zig");
 const std = @import("std");
+const Address = std.net.Address;
 
 pub fn tcpServ() !void {
-    // const sock_address: std.posix.sockaddr.in = .{};
+    const sock = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, 0);
+    defer std.posix.close(sock);
+
+    //   const enable: c_int = 1;
+    //    try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &enable, @sizeOf(c_int));
+    const ipstr = "127.0.0.1";
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    const sa: *std.posix.sockaddr.in = try allocator.create(std.posix.sockaddr.in);
+    defer allocator.destroy(sa);
+    sa.port = std.mem.nativeTo(u16, 8089, .big);
+    sa.family = std.posix.AF.INET;
+    var ip4: std.net.Ip4Address = try std.net.Ip4Address.parse(ipstr, 8089);
+
+    std.debug.print("ip: {d}\n", .{sa.port});
+    const true_sa: *std.posix.sockaddr = @ptrCast(&ip4.sa);
+    _ = try std.posix.bind(sock, true_sa, @as(std.posix.socklen_t, @sizeOf(std.posix.sockaddr.in)));
+    _ = try std.posix.listen(sock, 5);
+
+    //client init
+    const client_sa_in: *std.posix.sockaddr.in = try allocator.create(std.posix.sockaddr.in);
+    const client_sa: *std.posix.sockaddr = @ptrCast(client_sa_in);
+    var client_size = @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in)));
+    var client = try std.posix.accept(sock, client_sa, &client_size, 0);
+    var recv_buf = try allocator.alloc(u8, 128);
+    defer allocator.free(recv_buf);
+    @memset(recv_buf[0..128], 0);
+
+    while (!std.mem.eql(u8, recv_buf, "close")) {
+        const bytes_rec = try std.posix.recv(client, recv_buf, 0);
+        if (bytes_rec > 0) {
+            std.debug.print("data: (string) {s} : (raw) {d}\n", .{ recv_buf, recv_buf });
+            _ = try std.posix.send(client, "Message recv'd", 0);
+            client = try std.posix.accept(sock, client_sa, &client_size, 0);
+        }
+    }
     // const address: std.net.Address = .{};
     // const tcp_stream = std.net.tcpConnectToAddress()
+    std.posix.close(client);
 }
 
 pub fn ipToU32(ipstr: []const u8) !u32 {
