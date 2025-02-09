@@ -3,9 +3,8 @@ const tcp = @import("tcp.zig");
 
 pub fn main() !void {
     //    try testSocket();
-    try tcp.tcpServ("127.0.0.1");
+    try tcp.tcpServ("127.0.0.1", 8089);
 }
-const f = std.posix.sockaddr.un;
 
 pub fn testSocket() !void {
     const protocol_default = 0;
@@ -14,6 +13,8 @@ pub fn testSocket() !void {
     const sa: *std.posix.sockaddr.un = try alloc.create(std.posix.sockaddr.un);
     defer alloc.destroy(sa);
     const pth_lit = "/tmp/test_sock";
+    const f = try alloc.alloc(u8, 100000);
+    @memset(&f, 0);
 
     @memset(&sa.path, 0);
     @memcpy(sa.path[0..pth_lit.len], pth_lit);

@@ -2,33 +2,26 @@ const root = @import("../root.zig");
 const std = @import("std");
 const Address = std.net.Address;
 
-pub fn tcpServ(ip: []const u8) !void {
+pub fn tcpServ(ip: []const u8, port: u16) !void {
     const sock = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, 0);
     defer std.posix.close(sock);
 
-    //   const enable: c_int = 1;
-    //    try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &enable, @sizeOf(c_int));
-    const ipstr = ip;
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    const sa: *std.posix.sockaddr.in = try allocator.create(std.posix.sockaddr.in);
-    defer allocator.destroy(sa);
-    sa.port = std.mem.nativeTo(u16, 8089, .big);
-    sa.family = std.posix.AF.INET;
-    var ip4: std.net.Ip4Address = try std.net.Ip4Address.parse(ipstr, 8089);
+    var ip4: std.net.Ip4Address = try std.net.Ip4Address.parse(ip, port);
 
-    std.debug.print("ip: {d}\n", .{sa.port});
     const true_sa: *std.posix.sockaddr = @ptrCast(&ip4.sa);
     _ = try std.posix.bind(sock, true_sa, @as(std.posix.socklen_t, @sizeOf(std.posix.sockaddr.in)));
     _ = try std.posix.listen(sock, 5);
+    std.debug.print("listening on port: {d}\n", .{port});
 
     //client init
     const client_sa_in: *std.posix.sockaddr.in = try allocator.create(std.posix.sockaddr.in);
+    defer allocator.destroy(client_sa_in);
     const client_sa: *std.posix.sockaddr = @ptrCast(client_sa_in);
     var client_size = @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in)));
     var client = try std.posix.accept(sock, client_sa, &client_size, 0);
-    var recv_buf = try allocator.alloc(u8, 128);
+    var recv_buf = try allocator.alloc(u8, 128); // figure out what to do here with the buffer. obv, 128 is too small
     defer allocator.free(recv_buf);
     @memset(recv_buf[0..128], 0);
 
@@ -40,8 +33,6 @@ pub fn tcpServ(ip: []const u8) !void {
             client = try std.posix.accept(sock, client_sa, &client_size, 0);
         }
     }
-    // const address: std.net.Address = .{};
-    // const tcp_stream = std.net.tcpConnectToAddress()
     std.posix.close(client);
 }
 
