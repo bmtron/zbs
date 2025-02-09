@@ -20,26 +20,49 @@ pub fn tcpServ(ip: []const u8, port: u16) !void {
     defer allocator.destroy(client_sa_in);
     const client_sa: *std.posix.sockaddr = @ptrCast(client_sa_in);
     var client_size = @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in)));
+    var thread_count: u8 = 0;
     while (true) {
         const client = try std.posix.accept(sock, client_sa, &client_size, 0);
-        const thread = try std.Thread.spawn(.{}, handleClient, .{ allocator, client });
-        thread.detach();
+        if (thread_count < 10) {
+            const thread = try std.Thread.spawn(.{}, handleClient, .{ allocator, client, &thread_count });
+            thread.detach();
+            thread_count = thread_count + 1;
+            std.debug.print("thread_count: {d}\n", .{thread_count});
+        }
     }
     std.posix.close(sock);
 }
-fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t) !void {
+
+fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread_count: *u8) !void {
     const recv_buf = try allocator.alloc(u8, 4096);
     defer allocator.free(recv_buf);
 
-    while (true) {
+    var run_loop = true;
+    while (run_loop) {
         const bytes_rec = try std.posix.recv(client, recv_buf, 0);
         if (bytes_rec <= 0) break;
-        if (std.mem.eql(u8, recv_buf[0..bytes_rec], "close")) break;
-        std.debug.print("data: (string) {s} : (raw) {d}\n", .{ recv_buf, recv_buf });
+        const metadata_init = bytes_rec[0..5];
+        if (std.mem.eql(u8, metadata_init, "conf")) {
+            run_loop = handleConf();
+        }
+        if (std.mem.eql(u8, metadata_init, "file")) {
+            run_loop = handleFile();
+        }
+        std.debug.print("data: (string) {c} : (raw) {d}\n", .{ recv_buf[0], recv_buf[0] });
         _ = try std.posix.send(client, "Message recv'd", 0);
     }
     std.posix.close(client);
+
+    // not sure how we would get here, but
+    // best to check to prevent underflow
+    if (thread_count.* > 0) {
+        thread_count.* = thread_count.* - 1;
+    }
+    std.debug.print("thread_count: {d}\n", .{thread_count.*});
 }
+
+fn handleConf() bool {}
+fn handleFile() bool {}
 
 pub fn ipToU32(ipstr: []const u8) !u32 {
     var ip_holder: [4]?[:0]u8 = undefined;
