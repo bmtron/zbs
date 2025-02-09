@@ -41,7 +41,7 @@ pub fn main() !void {
             };
         }
         if (std.mem.eql(u8, arg, "client")) {
-            try client.Command.client(.{ .allocator = alloc, .args = arg_holder });
+            try client.Command.clientTcp(.{ .allocator = alloc, .args = arg_holder });
         }
     }
 }
