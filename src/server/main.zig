@@ -2,11 +2,10 @@ const std = @import("std");
 const tcp = @import("tcp.zig");
 
 pub fn main() !void {
-    //    try testSocket();
     try tcp.tcpServ("127.0.0.1", 8089);
 }
 
-pub fn testSocket() !void {
+pub fn testUnixSocket() !void {
     const protocol_default = 0;
     const sock = try std.posix.socket(std.os.linux.AF.UNIX, std.os.linux.SOCK.STREAM, protocol_default);
     const alloc = std.heap.page_allocator;

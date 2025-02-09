@@ -20,18 +20,23 @@ pub fn tcpServ(ip: []const u8, port: u16) !void {
     defer allocator.destroy(client_sa_in);
     const client_sa: *std.posix.sockaddr = @ptrCast(client_sa_in);
     var client_size = @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in)));
-    var client = try std.posix.accept(sock, client_sa, &client_size, 0);
-    var recv_buf = try allocator.alloc(u8, 128); // figure out what to do here with the buffer. obv, 128 is too small
+    while (true) {
+        const client = try std.posix.accept(sock, client_sa, &client_size, 0);
+        const thread = try std.Thread.spawn(.{}, handleClient, .{ allocator, client });
+        thread.detach();
+    }
+    std.posix.close(sock);
+}
+fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t) !void {
+    const recv_buf = try allocator.alloc(u8, 4096);
     defer allocator.free(recv_buf);
-    @memset(recv_buf[0..128], 0);
 
-    while (!std.mem.eql(u8, recv_buf, "close")) {
+    while (true) {
         const bytes_rec = try std.posix.recv(client, recv_buf, 0);
-        if (bytes_rec > 0) {
-            std.debug.print("data: (string) {s} : (raw) {d}\n", .{ recv_buf, recv_buf });
-            _ = try std.posix.send(client, "Message recv'd", 0);
-            client = try std.posix.accept(sock, client_sa, &client_size, 0);
-        }
+        if (bytes_rec <= 0) break;
+        if (std.mem.eql(u8, recv_buf[0..bytes_rec], "close")) break;
+        std.debug.print("data: (string) {s} : (raw) {d}\n", .{ recv_buf, recv_buf });
+        _ = try std.posix.send(client, "Message recv'd", 0);
     }
     std.posix.close(client);
 }
