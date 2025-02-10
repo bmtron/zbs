@@ -34,12 +34,34 @@ pub const Command = struct {
         _ = try std.posix.send(sock, buf, 0);
     }
     pub fn clientTcp(ctx: ztypes.CommandContext) !void {
-        const sock = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, 0);
-        var ip4 = try std.net.Ip4Address.parse("127.0.0.1", 8089);
-        var buf = try ctx.allocator.alloc(u8, 4096);
-        @memset(buf[0..], 69);
-        const sock_address: *std.posix.sockaddr = @ptrCast(&ip4.sa);
-        _ = try std.posix.connect(sock, sock_address, @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in))));
-        _ = try std.posix.send(sock, buf, 0);
+        var client = try std.net.tcpConnectToHost(ctx.allocator, "127.0.0.1", 8089);
+        defer client.close();
+        var loop_count: u8 = 0;
+        const cmd = "file";
+        const file_name = "test_file.txt,";
+        const send_buf = try ctx.allocator.alloc(u8, 32768);
+        @memset(send_buf[0..], 0);
+        @memcpy(send_buf[0..cmd.len], cmd);
+        @memcpy(send_buf[cmd.len .. cmd.len + 1], " ");
+        @memcpy(send_buf[cmd.len + 1 .. cmd.len + 1 + file_name.len], file_name);
+        while (true) {
+            if (loop_count * send_buf.len > 32769) {
+                break;
+            }
+            const written_bytes = try client.write(send_buf);
+            std.debug.print("Wrote {d} bytes\n", .{written_bytes});
+            @memset(send_buf[0..], 69);
+
+            loop_count += 1;
+        }
+
+        // const sock = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM, 0);
+        // var ip4 = try std.net.Ip4Address.parse("127.0.0.1", 8089);
+        // var buf = try ctx.allocator.alloc(u8, 4096);
+
+        // @memset(buf[0..], 69);
+        // const sock_address: *std.posix.sockaddr = @ptrCast(&ip4.sa);
+        // _ = try std.posix.connect(sock, sock_address, @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in))));
+        // _ = try std.posix.send(sock, buf, 0);
     }
 };

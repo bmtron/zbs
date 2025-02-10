@@ -2,7 +2,7 @@ const std = @import("std");
 const init = @import("commands/init.zig");
 const cmdtypes = @import("commands/types.zig");
 const dep = @import("commands/deploy.zig");
-const common = @import("commands/common.zig");
+const common = @import("../common/common.zig");
 const client = @import("commands/client.zig");
 
 pub fn main() !void {

@@ -1,6 +1,6 @@
 const std = @import("std");
 const zbstypes = @import("types.zig");
-const common = @import("common.zig");
+const common = @import("../common/common.zig");
 const config = @import("config.zig");
 
 const SubCommands = struct { location: ?[]const u8, help: ?[]const u8 };
