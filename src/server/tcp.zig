@@ -4,6 +4,7 @@ const Address = std.net.Address;
 const MAX_ARG_LEN: u8 = 50;
 const t_type = u8;
 const FILE_TRANSFER: t_type = 1;
+const T_TYPE_NULL: t_type = 0;
 
 pub const TcpServ = struct { address: []const u8, port: u16 };
 pub fn tcpServ(tcp_data: *TcpServ) !void {
@@ -45,30 +46,31 @@ fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread
 
     const delim = ",";
 
-    var transfer_type: t_type = 0;
+    var transfer_type: t_type = T_TYPE_NULL;
     var file_name: []u8 = "";
     var file_offset: u64 = 0;
 
     while (true) {
         const bytes_rec = try std.posix.recv(client, recv_buf, 0);
-        std.debug.print("initial bytes recvd: {d}\n", .{bytes_rec});
-        if (bytes_rec <= 0) break;
-        if (bytes_rec <= 100) {
-            std.debug.print("data: (string) {c} : (raw) {d}\n", .{ recv_buf, recv_buf });
+        std.debug.print("bytes recvd: {d}\n", .{bytes_rec});
+        if (bytes_rec <= 0) {
+            std.debug.print("BROKEN_LOOP \n", .{});
+            break;
         }
+        //_ = try std.posix.send(client, "Message recv'd", 0);
 
         const metadata_init: []u8 = recv_buf[0..4];
         std.debug.print("METADATA: {s}\n", .{metadata_init});
-        std.debug.print("METADATA_IS_FILE: {any}\n", .{std.mem.eql(u8, metadata_init, "file")});
 
-        if (std.mem.eql(u8, metadata_init, "file") and transfer_type == 0) {
-            file_name = getFileNameFromMetadata(recv_buf[5..], delim[0..]); // leaving room for a space
-            std.debug.print("The file name is {s}\n", .{file_name});
+        if (std.mem.eql(u8, metadata_init, "file") and transfer_type == T_TYPE_NULL) {
+            file_name = try getFileNameFromMetadata(recv_buf[5..], delim[0..], allocator);
+            std.debug.print("transfer_type_status: {any}\n", .{transfer_type});
             transfer_type = FILE_TRANSFER;
+            continue;
         }
 
         if (transfer_type == FILE_TRANSFER) {
-            try handleArtifact(client, file_name, recv_buf[0..], &file_offset);
+            try handleArtifact(file_name, recv_buf[0..bytes_rec], &file_offset);
         }
     }
     std.posix.close(client);
@@ -80,7 +82,7 @@ fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread
     }
     std.debug.print("thread_count: {d}\n", .{thread_count.*});
 }
-fn getFileNameFromMetadata(name_buf: []u8, delim: []const u8) []u8 {
+fn getFileNameFromMetadata(name_buf: []u8, delim: []const u8, allocator: std.mem.Allocator) ![]u8 {
     std.debug.print("name_buf_: {s}\n", .{name_buf});
     var counter: u8 = 0;
     var slice_end: u8 = 0;
@@ -92,7 +94,7 @@ fn getFileNameFromMetadata(name_buf: []u8, delim: []const u8) []u8 {
         }
         counter += 1;
     }
-    return name_buf[0..slice_end];
+    return try allocator.dupe(u8, name_buf[0..slice_end]);
 }
 fn findArgs(args: *const [50]?[:0]u8) !?[:0]u8 {
     var config_name: ?[:0]u8 = null;
@@ -110,10 +112,11 @@ fn findArgs(args: *const [50]?[:0]u8) !?[:0]u8 {
     return config_name;
 }
 
-fn handleArtifact(client: std.posix.socket_t, file_name: []const u8, recv_buf: []u8, offset: *u64) !void {
+fn handleArtifact(file_name: []const u8, recv_buf: []u8, offset: *u64) !void {
     var dir = std.fs.cwd();
     std.debug.print("file name is: {s}\n", .{file_name});
-    var file = dir.openFile(file_name, .{}) catch try dir.createFile(file_name, .{});
+    var file = dir.openFile(file_name, .{ .mode = .read_write, .lock = .exclusive }) catch try dir.createFile(file_name, .{});
+    defer file.close();
 
     if (offset.* > 0) {
         try file.seekTo(offset.*);
@@ -127,9 +130,7 @@ fn handleArtifact(client: std.posix.socket_t, file_name: []const u8, recv_buf: [
         std.debug.print("Wrote...more??? than amount receive...\n", .{});
     }
     offset.* += file_write;
-
-    _ = try std.posix.send(client, "Message recv'd", 0);
-    file.close();
+    std.debug.print("wrote {d} bytes, offset now at {d}\n", .{ file_write, offset.* });
 }
 
 fn handleFile() bool {}

@@ -45,12 +45,13 @@ pub const Command = struct {
         @memcpy(send_buf[cmd.len .. cmd.len + 1], " ");
         @memcpy(send_buf[cmd.len + 1 .. cmd.len + 1 + file_name.len], file_name);
         while (true) {
-            if (loop_count * send_buf.len > 32769) {
+            if (loop_count * send_buf.len > 120000) {
                 break;
             }
             const written_bytes = try client.write(send_buf);
             std.debug.print("Wrote {d} bytes\n", .{written_bytes});
             @memset(send_buf[0..], 69);
+            @memcpy(send_buf[send_buf.len - 1 ..], "\n");
 
             loop_count += 1;
         }
