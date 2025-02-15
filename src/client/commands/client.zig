@@ -36,7 +36,6 @@ pub const Command = struct {
     pub fn clientTcp(ctx: ztypes.CommandContext) !void {
         var client = try std.net.tcpConnectToHost(ctx.allocator, "127.0.0.1", 8089);
         defer client.close();
-        var loop_count: u8 = 0;
         const cmd = "file";
         var file_name: [:0]const u8 = undefined;
 
@@ -82,11 +81,17 @@ pub const Command = struct {
         var seek_skip: usize = 0;
         var last_bytes_read: usize = 0;
         var written_bytes: usize = 0;
+        var total_bytes_written: u64 = 0;
         @memset(send_buf[0..], 0);
-        @memcpy(send_buf[0..cmd.len], cmd);
-        @memcpy(send_buf[cmd.len .. cmd.len + 1], " ");
-        @memcpy(send_buf[cmd.len + 1 .. cmd.len + 1 + final_file_name.len], final_file_name);
 
+        var metadata_buf = try ctx.allocator.alloc(u8, cmd.len + 1 + final_file_name.len);
+        @memset(metadata_buf[0..], 0);
+        @memcpy(metadata_buf[0..cmd.len], cmd);
+        @memcpy(metadata_buf[cmd.len .. cmd.len + 1], " ");
+        @memcpy(metadata_buf[cmd.len + 1 .. cmd.len + 1 + final_file_name.len], final_file_name);
+
+        var loop_count: u32 = 0;
+        const end_pos = try file.getEndPos();
         while (true) {
             // ignore first pass of the loop, as it's just metadata.
             // then, we read from the file, and write to the server.
@@ -96,23 +101,31 @@ pub const Command = struct {
             // to ensure we aren't sending a buffer that's too large for the remaining
             // data and ending up with garbage at the end of the file.
             if (loop_count > 0) {
-                written_bytes = 0;
                 try file.seekTo(seek_skip);
+
                 last_bytes_read = try file.read(send_buf);
-                std.debug.print("LAST_BYTES_READ: {d}\n", .{last_bytes_read});
-                seek_skip += written_bytes;
-                // this means we're at the end of the file
-                if (last_bytes_read < TCP_CLIENT_BUF_SIZE) {
-                    const final_bytes_result = try handleLastBytes(ctx.allocator, last_bytes_read, &client, &file, seek_skip);
-                    if (!final_bytes_result) {
-                        std.debug.print("FAILED_FINAL_BYTES\n", .{});
+                std.debug.print("CURR_SEEK_SKIP: {d} : CURR_TOTAL_BYTES_WRITTEN: {d} : END_POS_BYTES: {d} at loop iteration {d}\n", .{ seek_skip, total_bytes_written, end_pos, loop_count });
+                if (last_bytes_read < TCP_CLIENT_BUF_SIZE or (seek_skip + TCP_CLIENT_BUF_SIZE) >= end_pos) {
+                    const final_buf = try ctx.allocator.alloc(u8, end_pos - total_bytes_written);
+                    defer ctx.allocator.free(final_buf);
+
+                    try file.seekTo(end_pos - final_buf.len);
+                    last_bytes_read = try file.read(final_buf);
+                    const final_bytes = try client.write(final_buf);
+                    if (final_bytes < 0) {
+                        std.debug.print("Some final error.\n", .{});
                     }
                     break;
                 }
+                written_bytes = try client.write(send_buf);
+
+                seek_skip += written_bytes;
+            } else {
+                _ = try client.write(metadata_buf);
             }
 
-            written_bytes = try client.write(send_buf);
-            std.debug.print("Wrote {d} bytes\n", .{written_bytes});
+            // reset written bytes on first loop since it's just metadata
+            total_bytes_written += written_bytes;
 
             loop_count += 1;
         }
@@ -120,12 +133,16 @@ pub const Command = struct {
     }
 };
 
-fn handleLastBytes(allocator: std.mem.Allocator, last_bytes_read: usize, client: *std.net.Stream, file: *const std.fs.File, file_pos: usize) !bool {
-    const final_buf = try allocator.alloc(u8, last_bytes_read);
+fn handleLastBytes(allocator: std.mem.Allocator, final_buf_size: usize, client: std.net.Stream, file: std.fs.File) !bool {
+    if (final_buf_size <= 0) {
+        std.debug.print("All bytes already sent, last bytes have been handled.\n", .{});
+        return true;
+    }
+    const final_buf = try allocator.alloc(u8, final_buf_size);
     defer allocator.free(final_buf);
-    try file.seekTo(file_pos);
     _ = try file.read(final_buf);
     const final_bytes = try client.write(final_buf);
+
     if (final_bytes > 0) {
         return true;
     }
