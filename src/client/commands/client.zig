@@ -1,6 +1,7 @@
 const std = @import("std");
 const ztypes = @import("types.zig");
 const TCP_CLIENT_BUF_SIZE: usize = 32768;
+
 pub const Command = struct {
     pub fn meta() ztypes.CommandInterface {
         return .{

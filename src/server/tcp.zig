@@ -1,8 +1,12 @@
 const root = @import("../root.zig");
 const std = @import("std");
+
+// custom typedefs
 const Address = std.net.Address;
-const MAX_ARG_LEN: u8 = 50;
 const t_type = u8;
+
+// global constants
+const MAX_ARG_LEN: u8 = 50;
 const FILE_TRANSFER: t_type = 1;
 const T_TYPE_NULL: t_type = 0;
 const CLIENT_BUFFER_SIZE = 32768;
@@ -25,6 +29,7 @@ pub fn tcpServ(tcp_data: *TcpServ) !void {
     //client init
     const client_sa_in: *std.posix.sockaddr.in = try allocator.create(std.posix.sockaddr.in);
     defer allocator.destroy(client_sa_in);
+
     const client_sa: *std.posix.sockaddr = @ptrCast(client_sa_in);
     var client_size = @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.in)));
     var thread_count: u8 = 0;
@@ -38,22 +43,25 @@ pub fn tcpServ(tcp_data: *TcpServ) !void {
             std.debug.print("thread_count: {d}\n", .{thread_count});
         }
     }
-
-    std.posix.close(sock);
 }
 
 fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread_count: *u8) !void {
     const start_time = std.time.milliTimestamp();
-    const recv_buf = try allocator.alloc(u8, RECEIVE_BUFFER_SIZE); //32768);
+    const recv_buf = try allocator.alloc(u8, RECEIVE_BUFFER_SIZE);
     defer allocator.free(recv_buf);
 
     const delim = ",";
 
+    // this is used as a flag for the initial loop.
+    // possibly more types of transfers to come but i doubt it
+    // perhaps refactor this to be simpler and less weird
     var transfer_type: t_type = T_TYPE_NULL;
     var file_name: []u8 = "";
     var file_offset: u64 = 0;
+
     var dir = std.fs.cwd();
-    var file: std.fs.File = undefined;
+    var file: ?std.fs.File = null;
+    defer file.?.close();
 
     var total_bytes_rec: u64 = 0;
     while (true) {
@@ -65,7 +73,6 @@ fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread
             break;
         }
         total_bytes_rec += bytes_rec;
-        //_ = try std.posix.send(client, "Message recv'd", 0);
 
         const metadata_init: []u8 = recv_buf[0..4];
 
@@ -75,19 +82,27 @@ fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread
             file_name = try getFileNameFromMetadata(recv_buf[5..], delim[0..], allocator);
             file = dir.openFile(file_name, .{ .mode = .read_write, .lock = .exclusive }) catch try dir.createFile(file_name, .{});
             if (bytes_rec > metadata_init.len + 1 + file_name.len) {
-                try handleArtifact(&file, recv_buf[metadata_init.len + 2 + file_name.len .. bytes_rec], &file_offset);
+                try handleArtifact(&(file).?, recv_buf[metadata_init.len + 2 + file_name.len .. bytes_rec], &file_offset);
             }
             std.debug.print("transfer_type_status: {any}\n", .{transfer_type});
             continue;
         }
 
         if (transfer_type == FILE_TRANSFER) {
-            try handleArtifact(&file, recv_buf[0..bytes_rec], &file_offset);
+            // edge case, file should never be null if transfer is FILE_TRANSFER
+            // program should have dumped out before this, however this is an extra precaution.
+            if (file == null) {
+                std.debug.print("NULL_FILE_ACCESS\n", .{});
+                std.posix.close(client);
+                return error.NullFileAccess;
+            } else {
+                try handleArtifact(&(file).?, recv_buf[0..bytes_rec], &file_offset);
+            }
         }
     }
     const end_time = std.time.milliTimestamp();
     const elapsed = end_time - start_time;
-    file.close();
+
     std.posix.close(client);
 
     // not sure how we would get here, but
@@ -98,14 +113,17 @@ fn handleClient(allocator: std.mem.Allocator, client: std.posix.socket_t, thread
     std.debug.print("Transferred {d} Mb of data in {d} milliseconds.\n", .{ (total_bytes_rec / (1024 * 1024)), elapsed });
     std.debug.print("thread_count: {d}\n", .{thread_count.*});
 }
+
+// the first sequence passed in to the server is the type of transaction taking place,
+// and then some metadata (such as the file name, if the transaction is a file).
+// this is just a helper to extract the file name using a delimiter character
+// (currently ',' but this should change to something that is perhaps more robust than a comma)
 fn getFileNameFromMetadata(name_buf: []u8, delim: []const u8, allocator: std.mem.Allocator) ![]u8 {
-    // std.debug.print("name_buf_: {s}\n", .{name_buf});
     var counter: u64 = 0;
     var slice_end: u64 = 0;
     while (true) {
         if (counter == name_buf.len - 1) break;
         if (std.mem.eql(u8, name_buf[counter .. counter + 1], delim)) {
-            std.debug.print("FOUND DELIMITER AT POSITION {d}\n", .{counter});
             slice_end = counter;
             break;
         }
@@ -113,6 +131,10 @@ fn getFileNameFromMetadata(name_buf: []u8, delim: []const u8, allocator: std.mem
     }
     return try allocator.dupe(u8, name_buf[0..slice_end]);
 }
+
+// rewrite this and extract it to be more generic.
+// should be able to take a list of possible arguments to find and
+// return the associated values
 fn findArgs(args: *const [50]?[:0]u8) !?[:0]u8 {
     var config_name: ?[:0]u8 = null;
     var count = 0;
@@ -137,17 +159,20 @@ fn handleArtifact(file: *std.fs.File, recv_buf: []u8, offset: *u64) !void {
         try file.*.seekTo(offset.*);
         std.debug.print("SEEKING_TO_POS: {d}\n", .{offset.*});
     }
+
+    // not sure how we would get here, but again,
+    // it's an edge case and I'd like to know if
+    // this ever happens
     if (file_write < @as(usize, recv_buf.len)) {
         std.debug.print("Wrote less than amount received...\n", .{});
     }
     if (file_write > @as(usize, recv_buf.len)) {
         std.debug.print("Wrote...more??? than amount receive...\n", .{});
     }
-    // std.debug.print("wrote {d} bytes, offset now at {d}\n", .{ file_write, offset.* });
 }
 
-fn handleFile() bool {}
-
+// Unused and not needed, but still a fun experiment
+// part of the learning process, I suppose
 pub fn ipToU32(ipstr: []const u8) !u32 {
     var ip_holder: [4]?[:0]u8 = undefined;
 
