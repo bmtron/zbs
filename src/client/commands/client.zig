@@ -1,6 +1,9 @@
 const std = @import("std");
 const ztypes = @import("types.zig");
 const TCP_CLIENT_BUF_SIZE: usize = 32768;
+const ip_args = [_][]const u8{ "ip", "-ipaddr", "-ip" };
+const file_name_args = [_][]const u8{ "fn", "-fn", "-file", "-file-name" };
+const port_args = [_][]const u8{ "port", "-port" };
 
 pub const Command = struct {
     pub fn meta() ztypes.CommandInterface {
@@ -34,30 +37,78 @@ pub const Command = struct {
         _ = try std.posix.connect(sock, sa, @as(std.posix.socklen_t, @intCast(@sizeOf(std.posix.sockaddr.un))));
         _ = try std.posix.send(sock, buf, 0);
     }
+
+    fn contains(list: [50]?[:0]const u8, target: []const u8) bool {
+        for (list) |item| {
+            if (item) |i| {
+                if (std.mem.eql(u8, i, target)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn argFinder(arg_list: [50]?[:0]const u8, targets: []const []const u8) i8 {
+        var counter: i8 = 0;
+        for (targets) |target| {
+            for (arg_list) |arg| {
+                if (arg) |a| {
+                    if (std.mem.eql(u8, a, target)) {
+                        std.debug.print("ARG: {s} : TARGET: {s} : COUNTER: {d} \n", .{ a, target, counter });
+                        return counter;
+                    }
+                }
+
+                counter += 1;
+            }
+            counter = 0;
+        }
+        // if we don't find anything, return -1 so we know there is an issue
+        return -1;
+    }
+
     pub fn clientTcp(ctx: ztypes.CommandContext) !void {
-        var client = try std.net.tcpConnectToHost(ctx.allocator, "127.0.0.1", 8089);
+        const ip_arg_idx = argFinder(ctx.args, &ip_args);
+        var ip_address: [:0]const u8 = "127.0.0.1";
+        // as long as the arg idx is greater than zero,
+        // we can safely do our incasting to get the arg
+        // and override the default value.
+        // Hope it's something valid!
+        if (ip_arg_idx > 0) {
+            const converted_idx: u8 = @intCast(ip_arg_idx);
+            if (ctx.args[converted_idx + 1]) |arg| {
+                ip_address = arg;
+            }
+        }
+
+        // default port value
+        var port: u16 = 8089;
+        const port_arg_idx = argFinder(ctx.args, &port_args);
+        // default port is always set to
+        if (port_arg_idx > 0) {
+            const converted_idx: u8 = @intCast(port_arg_idx);
+            if (ctx.args[converted_idx + 1]) |arg| {
+                port = try std.fmt.parseInt(u16, arg, 10);
+            }
+        }
+
+        std.debug.print("ip arg idx: {d}\n", .{ip_arg_idx});
+        var client = try std.net.tcpConnectToHost(ctx.allocator, ip_address, port);
         defer client.close();
         const cmd = "file";
         var file_name: [:0]const u8 = undefined;
 
-        // searching the arguments for the -fn (file name) or -file flag
-        // if none are found, just spit out a debug error for now and return
-        var found_file_arg_flag: bool = false;
-        for (ctx.args) |arg| {
-            if (arg) |g| {
-                if (found_file_arg_flag) {
-                    file_name = g;
+        const file_name_arg_idx = argFinder(ctx.args, &file_name_args);
 
-                    break;
-                }
-                if (std.mem.eql(u8, g, "-fn") or std.mem.eql(u8, g, "-file")) {
-                    found_file_arg_flag = true;
-                }
+        if (file_name_arg_idx < 0) {
+            std.debug.print("EXITING_CLIENT_EARLY_ERR_NO_FILE_NAME\n", .{});
+            return error.NoFileNameProvided;
+        } else {
+            const converted_idx: u8 = @intCast(file_name_arg_idx);
+            if (ctx.args[converted_idx + 1]) |arg| {
+                file_name = arg;
             }
-        }
-        if (!found_file_arg_flag) {
-            std.debug.print("EXITING_CLIENT_EARLY_NO_FILE_NAME", .{});
-            return;
         }
 
         // Ok, so here, we need to terminate the file name string with a character.
